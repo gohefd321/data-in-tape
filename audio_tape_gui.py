@@ -203,6 +203,9 @@ class AudioTapeGUI(QMainWindow):
         
         self.log("프로그램이 시작되었습니다.")
         
+        # 오디오 장치 목록 초기화 (log_text가 생성된 후)
+        self.refresh_audio_devices()
+        
     def create_encode_tab(self):
         """인코딩 탭 생성"""
         widget = QWidget()
@@ -496,9 +499,6 @@ class AudioTapeGUI(QMainWindow):
         
         device_group.setLayout(device_layout)
         layout.addWidget(device_group)
-        
-        # 장치 목록 초기화
-        self.refresh_audio_devices()
         
         # 설정 적용 버튼
         apply_btn = QPushButton("설정 적용")
@@ -838,7 +838,11 @@ class AudioTapeGUI(QMainWindow):
         """로그 메시지 추가"""
         from datetime import datetime
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.append(f"[{timestamp}] {message}")
+        # log_text가 아직 생성되지 않았으면 무시
+        if hasattr(self, 'log_text'):
+            self.log_text.append(f"[{timestamp}] {message}")
+        else:
+            print(f"[{timestamp}] {message}")
 
 
 if __name__ == '__main__':
