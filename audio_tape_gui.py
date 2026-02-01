@@ -661,7 +661,9 @@ class AudioTapeGUI(QMainWindow):
     
     def log(self, message):
         """로그 메시지 추가"""
-        self.log_text.append(f"[{QMessageBox.tr(self, 'Log')}] {message}")
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_text.append(f"[{timestamp}] {message}")
 
 
 if __name__ == '__main__':
