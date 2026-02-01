@@ -17,10 +17,11 @@ class AudioRecorderThread(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
     
-    def __init__(self, output_file, sample_rate=44100):
+    def __init__(self, output_file, sample_rate=44100, device_index=None):
         super().__init__()
         self.output_file = output_file
         self.sample_rate = sample_rate
+        self.device_index = device_index
         self.is_recording = False
         self.frames = []
         
@@ -31,6 +32,7 @@ class AudioRecorderThread(QThread):
                           channels=1,
                           rate=self.sample_rate,
                           input=True,
+                          input_device_index=self.device_index,
                           frames_per_buffer=1024)
             
             self.is_recording = True
@@ -65,9 +67,10 @@ class AudioPlayerThread(QThread):
     finished = pyqtSignal()
     error = pyqtSignal(str)
     
-    def __init__(self, audio_file):
+    def __init__(self, audio_file, device_index=None):
         super().__init__()
         self.audio_file = audio_file
+        self.device_index = device_index
         self.is_playing = False
         
     def run(self):
@@ -78,7 +81,8 @@ class AudioPlayerThread(QThread):
             stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
                           channels=wf.getnchannels(),
                           rate=wf.getframerate(),
-                          output=True)
+                          output=True,
+                          output_device_index=self.device_index)
             
             self.is_playing = True
             data = wf.readframes(1024)
@@ -152,6 +156,8 @@ class AudioTapeGUI(QMainWindow):
         self.player_thread = None
         self.encoding_thread = None
         self.decoding_thread = None
+        self.input_device_index = None
+        self.output_device_index = None
         
         self.initUI()
         self.update_encoder()
@@ -225,10 +231,18 @@ class AudioTapeGUI(QMainWindow):
         layout.addWidget(output_group)
         
         # 인코딩 버튼
+        encode_btn_layout = QHBoxLayout()
         self.encode_btn = QPushButton("인코딩 시작")
         self.encode_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         self.encode_btn.clicked.connect(self.start_encoding)
-        layout.addWidget(self.encode_btn)
+        encode_btn_layout.addWidget(self.encode_btn)
+        
+        # 인코딩 후 자동 재생 체크박스
+        self.auto_play_checkbox = QRadioButton("인코딩 후 자동 재생")
+        self.auto_play_checkbox.setChecked(True)
+        encode_btn_layout.addWidget(self.auto_play_checkbox)
+        
+        layout.addLayout(encode_btn_layout)
         
         # 프로그레스 바
         self.encode_progress = QProgressBar()
@@ -273,10 +287,18 @@ class AudioTapeGUI(QMainWindow):
         layout.addWidget(output_group)
         
         # 디코딩 버튼
+        decode_btn_layout = QHBoxLayout()
         self.decode_btn = QPushButton("디코딩 시작")
         self.decode_btn.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         self.decode_btn.clicked.connect(self.start_decoding)
-        layout.addWidget(self.decode_btn)
+        decode_btn_layout.addWidget(self.decode_btn)
+        
+        # 녹음 후 자동 디코딩 체크박스
+        self.auto_decode_checkbox = QRadioButton("녹음 완료 후 자동 디코딩")
+        self.auto_decode_checkbox.setChecked(True)
+        decode_btn_layout.addWidget(self.auto_decode_checkbox)
+        
+        layout.addLayout(decode_btn_layout)
         
         # 프로그레스 바
         self.decode_progress = QProgressBar()
@@ -366,6 +388,36 @@ class AudioTapeGUI(QMainWindow):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
+        # 주파수 개수 설정
+        freq_group = QGroupBox("주파수 개수 (대역폭 설정)")
+        freq_layout = QVBoxLayout()
+        
+        freq_label = QLabel("사용할 주파수 개수 (2: 기본, 8: 최대 대역폭)")
+        freq_layout.addWidget(freq_label)
+        
+        freq_slider_layout = QHBoxLayout()
+        self.freq_slider = QSlider(Qt.Orientation.Horizontal)
+        self.freq_slider.setMinimum(2)
+        self.freq_slider.setMaximum(8)
+        self.freq_slider.setValue(2)
+        self.freq_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.freq_slider.setTickInterval(1)
+        self.freq_slider.valueChanged.connect(self.update_frequency_label)
+        
+        self.freq_value_label = QLabel("2")
+        self.freq_value_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        
+        freq_slider_layout.addWidget(self.freq_slider)
+        freq_slider_layout.addWidget(self.freq_value_label)
+        freq_layout.addLayout(freq_slider_layout)
+        
+        self.freq_info_label = QLabel()
+        self.update_frequency_info(2)
+        freq_layout.addWidget(self.freq_info_label)
+        
+        freq_group.setLayout(freq_layout)
+        layout.addWidget(freq_group)
+        
         # 압축 설정
         compression_group = QGroupBox("압축 설정")
         compression_layout = QVBoxLayout()
@@ -419,6 +471,35 @@ class AudioTapeGUI(QMainWindow):
         samplerate_group.setLayout(samplerate_layout)
         layout.addWidget(samplerate_group)
         
+        # 오디오 장치 선택
+        device_group = QGroupBox("오디오 장치 선택")
+        device_layout = QVBoxLayout()
+        
+        # 입력 장치
+        input_layout = QHBoxLayout()
+        input_layout.addWidget(QLabel("입력 장치 (녹음):"))
+        self.input_device_combo = QComboBox()
+        input_layout.addWidget(self.input_device_combo)
+        device_layout.addLayout(input_layout)
+        
+        # 출력 장치
+        output_layout = QHBoxLayout()
+        output_layout.addWidget(QLabel("출력 장치 (재생):"))
+        self.output_device_combo = QComboBox()
+        output_layout.addWidget(self.output_device_combo)
+        device_layout.addLayout(output_layout)
+        
+        # 장치 새로고침 버튼
+        refresh_btn = QPushButton("장치 목록 새로고침")
+        refresh_btn.clicked.connect(self.refresh_audio_devices)
+        device_layout.addWidget(refresh_btn)
+        
+        device_group.setLayout(device_layout)
+        layout.addWidget(device_group)
+        
+        # 장치 목록 초기화
+        self.refresh_audio_devices()
+        
         # 설정 적용 버튼
         apply_btn = QPushButton("설정 적용")
         apply_btn.clicked.connect(self.update_encoder)
@@ -431,14 +512,89 @@ class AudioTapeGUI(QMainWindow):
         """압축 강도 라벨 업데이트"""
         self.compression_value_label.setText(str(value))
     
+    def update_frequency_label(self, value):
+        """주파수 개수 라벨 업데이트"""
+        self.freq_value_label.setText(str(value))
+        self.update_frequency_info(value)
+    
+    def update_frequency_info(self, num_freq):
+        """주파수 정보 업데이트"""
+        frequencies = [800 + i * 600 for i in range(num_freq)]
+        bands = [(f - 300, f + 300) for f in frequencies]
+        
+        info_text = f"주파수 수: {num_freq}개\n"
+        info_text += f"한 심볼당 비트 수: {int(np.log2(num_freq))}비트\n"
+        info_text += f"대역폭 증가율: {num_freq/2 * 100:.0f}%\n\n"
+        info_text += "사용 주파수 및 대역:\n"
+        
+        for i, (freq, (lower, upper)) in enumerate(zip(frequencies, bands)):
+            info_text += f"  {i}: {freq}Hz (대역: {lower}-{upper}Hz)\n"
+        
+        self.freq_info_label.setText(info_text)
+    
+    def refresh_audio_devices(self):
+        """오디오 장치 목록 새로고침"""
+        try:
+            p = pyaudio.PyAudio()
+            
+            # 입력 장치 목록
+            self.input_device_combo.clear()
+            self.output_device_combo.clear()
+            
+            default_input = p.get_default_input_device_info()
+            default_output = p.get_default_output_device_info()
+            
+            for i in range(p.get_device_count()):
+                device_info = p.get_device_info_by_index(i)
+                device_name = device_info['name']
+                
+                # 입력 장치
+                if device_info['maxInputChannels'] > 0:
+                    display_name = f"{i}: {device_name}"
+                    if i == default_input['index']:
+                        display_name += " (기본)"
+                    self.input_device_combo.addItem(display_name, i)
+                    if i == default_input['index']:
+                        self.input_device_combo.setCurrentIndex(self.input_device_combo.count() - 1)
+                
+                # 출력 장치
+                if device_info['maxOutputChannels'] > 0:
+                    display_name = f"{i}: {device_name}"
+                    if i == default_output['index']:
+                        display_name += " (기본)"
+                    self.output_device_combo.addItem(display_name, i)
+                    if i == default_output['index']:
+                        self.output_device_combo.setCurrentIndex(self.output_device_combo.count() - 1)
+            
+            p.terminate()
+            self.log("오디오 장치 목록을 새로고침했습니다.")
+            
+        except Exception as e:
+            self.log(f"오디오 장치 목록 불러오기 실패: {str(e)}")
+    
     def update_encoder(self):
         """인코더 설정 업데이트"""
         compression = self.compression_slider.value()
         sample_rate_text = self.samplerate_combo.currentText()
         sample_rate = int(sample_rate_text.split()[0])
+        num_frequencies = self.freq_slider.value()
         
-        self.encoder = AudioTapeEncoder(sample_rate=sample_rate, compression_level=compression)
-        self.log(f"설정 업데이트: 압축 강도 {compression}, 샘플링 레이트 {sample_rate} Hz")
+        # 선택된 오디오 장치 인덱스 저장
+        if self.input_device_combo.currentData() is not None:
+            self.input_device_index = self.input_device_combo.currentData()
+        if self.output_device_combo.currentData() is not None:
+            self.output_device_index = self.output_device_combo.currentData()
+        
+        self.encoder = AudioTapeEncoder(
+            sample_rate=sample_rate, 
+            compression_level=compression,
+            num_frequencies=num_frequencies
+        )
+        self.log(f"설정 업데이트: 압축 {compression}, 샘플링 {sample_rate}Hz, 주파수 {num_frequencies}개")
+        
+        # 주파수 정보 표시
+        freq_info = f"주파수: {self.encoder.frequencies}"
+        self.log(freq_info)
     
     def update_audio_devices(self):
         """오디오 장치 정보 업데이트"""
@@ -529,12 +685,23 @@ class AudioTapeGUI(QMainWindow):
 압축 후 크기: {stats['compressed_size']:,} 바이트
 압축률: {stats['compression_ratio']:.2f}%
 오디오 길이: {stats['duration_seconds']:.2f}초
-비트레이트: {stats['bitrate']:.2f} bps
+심볼 레이트: {stats['symbol_rate']:.2f} symbols/sec
+비트 레이트: {stats['bit_rate']:.2f} bps
+주파수 개수: {stats['num_frequencies']}개
         """
         
         self.encode_stats_label.setText(stats_text)
         self.log("인코딩 완료!")
-        QMessageBox.information(self, "완료", "인코딩이 완료되었습니다!")
+        
+        # 자동 재생 체크 시
+        if self.auto_play_checkbox.isChecked():
+            output_file = self.encode_output_label.text()
+            self.play_file_label.setText(output_file)
+            self.log("자동 재생을 시작합니다...")
+            QMessageBox.information(self, "완료", "인코딩이 완료되었습니다!\n자동으로 재생을 시작합니다.")
+            self.start_playing()
+        else:
+            QMessageBox.information(self, "완료", "인코딩이 완료되었습니다!")
     
     def encoding_error(self, error_msg):
         """인코딩 에러"""
@@ -600,7 +767,7 @@ class AudioTapeGUI(QMainWindow):
         sample_rate_text = self.samplerate_combo.currentText()
         sample_rate = int(sample_rate_text.split()[0])
         
-        self.recorder_thread = AudioRecorderThread(output_file, sample_rate)
+        self.recorder_thread = AudioRecorderThread(output_file, sample_rate, self.input_device_index)
         self.recorder_thread.finished.connect(self.recording_finished)
         self.recorder_thread.error.connect(self.recording_error)
         self.recorder_thread.start()
@@ -615,7 +782,15 @@ class AudioTapeGUI(QMainWindow):
         self.record_start_btn.setEnabled(True)
         self.record_stop_btn.setEnabled(False)
         self.log(f"녹음 완료: {file_path}")
-        QMessageBox.information(self, "완료", f"녹음이 완료되었습니다!\n파일: {file_path}")
+        
+        # 자동 디코딩 체크 시
+        if self.auto_decode_checkbox.isChecked():
+            self.decode_input_label.setText(file_path)
+            self.log("자동 디코딩을 시작합니다...")
+            QMessageBox.information(self, "완료", f"녹음이 완료되었습니다!\n자동으로 디코딩을 시작합니다.\n파일: {file_path}")
+            self.start_decoding()
+        else:
+            QMessageBox.information(self, "완료", f"녹음이 완료되었습니다!\n파일: {file_path}")
     
     def recording_error(self, error_msg):
         """녹음 에러"""
@@ -636,7 +811,7 @@ class AudioTapeGUI(QMainWindow):
         self.play_stop_btn.setEnabled(True)
         self.log(f"재생 시작: {file_path}")
         
-        self.player_thread = AudioPlayerThread(file_path)
+        self.player_thread = AudioPlayerThread(file_path, self.output_device_index)
         self.player_thread.finished.connect(self.playing_finished)
         self.player_thread.error.connect(self.playing_error)
         self.player_thread.start()
