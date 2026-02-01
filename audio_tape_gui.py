@@ -421,6 +421,63 @@ class AudioTapeGUI(QMainWindow):
         freq_group.setLayout(freq_layout)
         layout.addWidget(freq_group)
         
+        # 주파수 범위 설정
+        freq_range_group = QGroupBox("주파수 범위 (Hz)")
+        freq_range_layout = QVBoxLayout()
+        
+        # 최소 주파수
+        min_freq_layout = QHBoxLayout()
+        min_freq_layout.addWidget(QLabel("최소 주파수:"))
+        self.min_freq_spin = QSpinBox()
+        self.min_freq_spin.setRange(800, 20000)
+        self.min_freq_spin.setValue(1400)
+        self.min_freq_spin.setSingleStep(100)
+        self.min_freq_spin.setSuffix(" Hz")
+        min_freq_layout.addWidget(self.min_freq_spin)
+        freq_range_layout.addLayout(min_freq_layout)
+        
+        # 최대 주파수
+        max_freq_layout = QHBoxLayout()
+        max_freq_layout.addWidget(QLabel("최대 주파수:"))
+        self.max_freq_spin = QSpinBox()
+        self.max_freq_spin.setRange(1000, 22000)
+        self.max_freq_spin.setValue(11025)
+        self.max_freq_spin.setSingleStep(100)
+        self.max_freq_spin.setSuffix(" Hz")
+        max_freq_layout.addWidget(self.max_freq_spin)
+        freq_range_layout.addLayout(max_freq_layout)
+        
+        freq_range_info = QLabel("테이프 음역을 최대한 활용합니다\n권장: 1400-11025 Hz (CD 품질의 절반)")
+        freq_range_info.setWordWrap(True)
+        freq_range_layout.addWidget(freq_range_info)
+        
+        freq_range_group.setLayout(freq_range_layout)
+        layout.addWidget(freq_range_group)
+        
+        # 심볼 지속시간 설정
+        symbol_dur_group = QGroupBox("심볼 지속시간")
+        symbol_dur_layout = QVBoxLayout()
+        
+        symbol_dur_hlayout = QHBoxLayout()
+        symbol_dur_hlayout.addWidget(QLabel("심볼 지속시간:"))
+        self.symbol_duration_spin = QSpinBox()
+        self.symbol_duration_spin.setRange(5, 100)
+        self.symbol_duration_spin.setValue(20)
+        self.symbol_duration_spin.setSingleStep(5)
+        self.symbol_duration_spin.setSuffix(" ms")
+        symbol_dur_hlayout.addWidget(self.symbol_duration_spin)
+        symbol_dur_layout.addLayout(symbol_dur_hlayout)
+        
+        symbol_dur_info = QLabel(
+            "• 짧을수록: 빠른 전송, 노이즈에 약함\n"
+            "• 길수록: 느린 전송, 안정적"
+        )
+        symbol_dur_info.setWordWrap(True)
+        symbol_dur_layout.addWidget(symbol_dur_info)
+        
+        symbol_dur_group.setLayout(symbol_dur_layout)
+        layout.addWidget(symbol_dur_group)
+        
         # 압축 설정
         compression_group = QGroupBox("압축 설정")
         compression_layout = QVBoxLayout()
@@ -578,6 +635,9 @@ class AudioTapeGUI(QMainWindow):
         sample_rate_text = self.samplerate_combo.currentText()
         sample_rate = int(sample_rate_text.split()[0])
         num_frequencies = self.freq_slider.value()
+        min_freq = self.min_freq_spin.value()
+        max_freq = self.max_freq_spin.value()
+        symbol_duration = self.symbol_duration_spin.value() / 1000.0  # ms -> s
         
         # 선택된 오디오 장치 인덱스 저장
         if self.input_device_combo.currentData() is not None:
@@ -588,12 +648,16 @@ class AudioTapeGUI(QMainWindow):
         self.encoder = AudioTapeEncoder(
             sample_rate=sample_rate, 
             compression_level=compression,
-            num_frequencies=num_frequencies
+            num_frequencies=num_frequencies,
+            min_freq=min_freq,
+            max_freq=max_freq,
+            symbol_duration=symbol_duration
         )
         self.log(f"설정 업데이트: 압축 {compression}, 샘플링 {sample_rate}Hz, 주파수 {num_frequencies}개")
+        self.log(f"주파수 범위: {min_freq}-{max_freq}Hz, 심볼 지속시간: {symbol_duration*1000:.1f}ms")
         
         # 주파수 정보 표시
-        freq_info = f"주파수: {self.encoder.frequencies}"
+        freq_info = f"주파수: {[f'{f:.0f}Hz' for f in self.encoder.frequencies]}"
         self.log(freq_info)
     
     def update_audio_devices(self):
